@@ -54,7 +54,19 @@
     </style>
 </head>
 <body class="h-screen flex overflow-hidden text-gray-800">
-
+<div id="termsModal" style="position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;">
+  <div style="background-color: white; padding: 30px; border-radius: 10px; max-width: 500px; text-align: center; font-family: sans-serif; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+    <h2 style="color: #2c3e50;">Educational Practice Disclaimer</h2>
+    <p style="text-align: left; font-size: 14px; line-height: 1.6; color: #34495e;">
+      <strong>Notice:</strong> This Electronic Medical Record (EMR) simulation is for <strong>practice and educational purposes only</strong>. It does not contain real patient data and should not be used for actual medical documentation.
+      <br><br>
+      <strong>Copyright & IP:</strong> This simulation and its structure are the intellectual property of <strong>Stephani Hamilton, Ed.D. (2026)</strong>. By clicking "I Agree," you acknowledge that this resource is for non-commercial use only and may not be redistributed or sold.
+    </p>
+    <button onclick="document.getElementById('termsModal').style.display='none'" style="background-color: #27ae60; color: white; border: none; padding: 12px 25px; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 15px;">
+      I Agree & Enter Simulation
+    </button>
+  </div>
+</div>
     <div id="guardrail-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center">
         <div class="bg-white w-11/12 max-w-2xl rounded-xl shadow-2xl overflow-hidden flex flex-col">
             <div class="bg-[#8a1538] text-white p-4 flex justify-between items-center">
