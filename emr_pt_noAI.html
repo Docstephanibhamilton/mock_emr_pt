@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Mock EMR - PT Student Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #f3f4f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        
+        /* Portal Styles */
+        .patient-card { cursor: pointer; transition: all 0.2s; }
+        .patient-card:hover { background-color: #fce7f3; border-left: 4px solid #8a1538; }
+        .active-patient { background-color: #fce7f3; border-left: 4px solid #8a1538; }
+        .spinner {
+            border: 3px solid #f3f3f3; border-top: 3px solid #8b5cf6;
+            border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Form Styles */
+        h1.form-title { text-align: center; color: #8a1538; margin-bottom: 20px; font-size: 2rem; font-weight: bold; }
+        h2.section-title { border-bottom: 2px solid #8a1538; padding-bottom: 4px; color: #8a1538; font-size: 1.25rem; margin-top: 1.5rem; margin-bottom: 1rem;}
+        label { font-weight: bold; color: #374151; font-size: 0.9rem; }
+        input[type="text"], input[type="date"], input[type="time"], input[type="number"], textarea, select {
+            width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box;
+            border: 1px solid #d1d5db; border-radius: 6px; transition: border-color 0.2s, box-shadow 0.2s; font-size: 0.9rem;
+        }
+        
+        /* WCAG: Focus states */
+        input:focus, textarea:focus, select:focus { outline: none; border-color: #8a1538; box-shadow: 0 0 0 3px rgba(138, 21, 56, 0.3); }
+        button:focus { outline: none; box-shadow: 0 0 0 3px rgba(138, 21, 56, 0.5); }
+        
+        textarea { resize: vertical; min-height: 60px; }
+        .checkbox-group { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+        .checkbox-group input[type="checkbox"] { width: auto; margin-top: 0; }
+        .section { margin-bottom: 20px; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; }
+        th { background-color: #f3f4f6; font-size: 0.9rem; }
+
+        /* Print Styles */
+        @media print {
+            body { background-color: white; overflow: visible; display: block; }
+            aside, header, .no-print { display: none !important; }
+            main { width: 100% !important; display: block; }
+            .flex-1 { overflow-y: visible !important; }
+            .section { box-shadow: none; border: 1px solid #e5e7eb; margin-bottom: 15px; break-inside: avoid; }
+            input, textarea, select { border: 1px solid #9ca3af; background-color: transparent; }
+            textarea { overflow: visible; }
+            select { appearance: none; -webkit-appearance: none; -moz-appearance: none; }
+        }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden text-gray-800">
+
+    <div id="guardrail-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center">
+        <div class="bg-white w-11/12 max-w-2xl rounded-xl shadow-2xl overflow-hidden flex flex-col">
+            <div class="bg-[#8a1538] text-white p-4 flex justify-between items-center">
+                <h3 id="modal-title" class="font-bold text-lg flex items-center gap-2">🛡️ AI Safety & Plan Review</h3>
+            </div>
+            <div class="p-6" aria-live="polite">
+                <div id="modal-loading" class="flex flex-col items-center justify-center py-8">
+                    <span class="spinner w-10 h-10 border-4 border-t-[#8a1538] mb-4"></span>
+                    <p class="text-gray-600 font-semibold">Scanning PT Evaluation & Interventions for clinical standards...</p>
+                </div>
+                <div id="modal-results" class="hidden">
+                    <p class="text-sm text-gray-700 mb-2 font-bold">Review the following automated clinical checks:</p>
+                    <div id="guardrail-text" class="bg-red-50 text-red-900 border border-red-200 p-4 rounded-lg font-medium whitespace-pre-wrap"></div>
+                </div>
+            </div>
+            <div class="bg-gray-100 p-4 border-t flex justify-end gap-3">
+                <button type="button" onclick="window.closeModal()" class="px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold rounded shadow transition-colors">Go Back & Edit</button>
+                <button type="button" id="force-submit-btn" onclick="window.finalizeSignature()" class="px-4 py-2 bg-green-700 hover:bg-green-800 text-white font-bold rounded shadow transition-colors hidden">Acknowledge & Sign Eval</button>
+            </div>
+        </div>
+    </div>
+
+    <aside class="w-1/4 bg-white border-r border-gray-200 flex flex-col h-full shadow-lg z-10 no-print">
+        <div class="p-5 border-b border-gray-200 bg-[#8a1538] text-white">
+            <h1 class="text-xl font-bold">University EMR</h1>
+            <p class="text-sm opacity-80">DPT Student Portal</p>
+        </div>
+        
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+            <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">My Schedule</h2>
+            <div id="save-status" role="status" aria-live="polite" class="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded-full" style="display: none;">Saved!</div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto" id="patient-list" role="navigation" aria-label="Patient Roster">
+            <button class="w-full text-left patient-card active-patient p-4 border-b border-gray-100 block" onclick="window.selectPatient('patient1', this)">
+                <div class="flex justify-between items-start"><h3 class="font-bold text-[#8a1538]">Lin, Maya</h3><span class="bg-blue-200 text-blue-900 text-xs font-bold px-2 py-0.5 rounded border border-blue-300">Outpatient</span></div>
+                <p class="text-sm text-gray-700">DOB: 09/12/2005 | Clinic Bay 3</p>
+                <p id="pt1-cc" class="text-sm text-gray-600 mt-1 truncate italic">Loading...</p>
+            </button>
+            <button class="w-full text-left patient-card p-4 border-b border-gray-100 block" onclick="window.selectPatient('patient2', this)">
+                <div class="flex justify-between items-start"><h3 class="font-bold text-[#8a1538]">Chen, Robert</h3><span class="bg-purple-200 text-purple-900 text-xs font-bold px-2 py-0.5 rounded border border-purple-300">Neuro Rehab</span></div>
+                <p class="text-sm text-gray-700">DOB: 03/04/1952 | Room 412</p>
+                <p id="pt2-cc" class="text-sm text-gray-600 mt-1 truncate italic">Loading...</p>
+            </button>
+            <button class="w-full text-left patient-card p-4 border-b border-gray-100 block" onclick="window.selectPatient('patient3', this)">
+                <div class="flex justify-between items-start"><h3 class="font-bold text-[#8a1538]">Vance, Eleanor</h3><span class="bg-red-200 text-red-900 text-xs font-bold px-2 py-0.5 rounded border border-red-300">Acute Care</span></div>
+                <p class="text-sm text-gray-700">DOB: 11/25/1938 | Room 201</p>
+                <p id="pt3-cc" class="text-sm text-gray-600 mt-1 truncate italic">Loading...</p>
+            </button>
+        </div>
+        <div class="p-4 bg-gray-50 text-xs text-gray-600 border-t border-gray-200 text-center flex flex-col gap-3">
+            <span>Logged in as: DPT Student</span>
+            <button type="button" onclick="window.clearFormAndRegenerate(event)" class="w-full bg-[#8a1538] hover:bg-red-900 text-white font-bold py-2 px-4 rounded shadow transition-colors focus:ring-2 focus:ring-offset-2 focus:ring-[#8a1538]">
+                Generate New Cases
+            </button>
+        </div>
+    </aside>
+
+    <main class="w-3/4 flex flex-col h-full bg-gray-50">
+        <header class="bg-white p-6 shadow-sm border-b border-gray-200 flex justify-between items-center no-print z-10">
+            <div>
+                <h2 id="banner-name" class="text-2xl font-bold text-gray-900">Maya Lin</h2>
+                <p id="banner-details" class="text-sm text-gray-700 font-medium">MRN: 10029384 | DOB: 09/12/2005 | Status: Outpatient Ortho</p>
+            </div>
+            <div class="flex gap-3">
+                <button type="button" onclick="window.print()" class="bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 px-4 rounded shadow transition-colors"> 🖨️ Print to PDF </button>
+                <button type="button" onclick="window.clearCurrentChart()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded shadow transition-colors"> Clear Current Chart </button>
+            </div>
+        </header>
+
+        <div class="flex-1 overflow-y-auto p-4 md:p-8">
+            <div class="max-w-4xl mx-auto">
+                <form id="emr-form" aria-label="Physical Therapy Evaluation Form">
+                    
+                    <h1 class="form-title no-print">Physical Therapy Initial Evaluation</h1>
+
+                    <div class="section">
+                        <h2 class="section-title">Encounter & Identifying Data</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                            <div><label for="form-patient-name">Patient Name:</label> <input id="form-patient-name" name="patient_identifier" type="text" readonly class="bg-gray-100" /></div>
+                            <div><label for="admit_date">Admit/SOC Date:</label> <input id="admit_date" name="admit_date" type="date" /></div>
+                            <div><label for="onset_date">Onset Date:</label> <input id="onset_date" name="onset_date" type="date" /></div>
+                            <div class="md:col-span-2"><label for="primary_diagnosis">Primary Diagnosis / ICD-10:</label> <input id="primary_diagnosis" name="primary_diagnosis" type="text" /></div>
+                            <div><label for="patient-age">Age:</label> <input id="patient-age" name="patient_age" type="text" readonly class="bg-gray-100" /></div>
+                            <div class="md:col-span-3"><label for="physician_order">Reason for PT Referral:</label> <input id="physician_order" name="physician_order" type="text" /></div>
+                            
+                            <div class="md:col-span-3 mt-2">
+                                <label for="intake_notes" class="text-[#8a1538]">Intake / Referral Notes (Chart Review):</label>
+                                <textarea id="intake_notes" readonly class="bg-gray-100 text-gray-800 w-full p-3 border border-gray-300 rounded min-h-[100px] mt-1"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h2 class="section-title">Proposed Interventions / Plan of Care</h2>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
+                            <label class="checkbox-group"><input type="checkbox" name="poc_bed_mobility"> Bed Mobility Training</label>
+                            <label class="checkbox-group"><input type="checkbox" name="poc_transfer"> Transfer Training</label>
+                            <label class="checkbox-group"><input type="checkbox" name="poc_wheelchair"> Wheelchair Mgmt</label>
+                            <label class="checkbox-group"><input type="checkbox" name="poc_gait"> Gait/Locomotion</label>
+                            <label class="checkbox-group"><input type="checkbox" name="poc_thera_ex"> Therapeutic Exercise</label>
+                            <label class="checkbox-group"><input type="checkbox" name="poc_neuro"> Neuro Re-education</label>
+                            <label class="checkbox-group"><input type="checkbox" name="poc_manual"> Manual Therapy</label>
+                            <label class="checkbox-group"><input type="checkbox" name="poc_hep"> Home Exercise Program</label>
+                            <label class="checkbox-group"><input type="checkbox" name="poc_balance"> Balance Retraining</label>
+                        </div>
+                        <div class="mt-4"><label for="poc_precautions">Precautions / Contraindications:</label><input id="poc_precautions" type="text" name="poc_precautions_desc" placeholder="e.g., WBAT LLE, Sternal Precautions..."></div>
+                    </div>
+
+                    <div class="section">
+                        <h2 class="section-title">History</h2>
+                        
+                        <div class="mb-4">
+                            <label for="hpi-textarea">History of Present Illness (HPI):</label>
+                            <textarea id="hpi-textarea" name="hx_hpi" class="w-full min-h-[120px] p-3 border border-gray-300 rounded mt-1" placeholder="Synthesize the intake notes into a formal HPI..."></textarea>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-4">
+                            <div><label for="hx_surgical">Current Surgical History:</label><textarea id="hx_surgical" name="hx_surgical"></textarea></div>
+                            <div><label for="hx_plof">Prior Level of Function (PLOF) / Adaptive Equip:</label><textarea id="hx_plof" name="hx_plof"></textarea></div>
+                            <div><label for="hx_social">Home Environment / Social History:</label><textarea id="hx_social" name="hx_social"></textarea></div>
+                            <div><label for="hx_goals">Patient/Family Goals:</label><textarea id="hx_goals" name="hx_goals"></textarea></div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h2 class="section-title">Diagnostics & Radiology</h2>
+                        <div id="rad-container" class="mt-2">
+                            <div class="mb-2">
+                                <label for="rad-report">Radiology Report:</label>
+                                <textarea id="rad-report" name="rad_report" readonly class="bg-gray-100 text-gray-700 min-h-[80px] p-3 border border-gray-300 rounded w-full"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h2 class="section-title">Objective Observation & Status</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label for="pain_scale">Pain (0-10):</label> <input id="pain_scale" name="pain_scale" type="text" placeholder="Rest/Activity" /></div>
+                            <div><label for="mental_status">Mental Status:</label>
+                                <select id="mental_status" name="mental_status"><option value="">--Select--</option><option value="Alert x4">Alert x4</option><option value="Confused">Confused</option><option value="Lethargic">Lethargic</option></select>
+                            </div>
+                            <div class="flex flex-col"><label for="sensation_desc">Sensation (WFL/Impaired):</label><input id="sensation_desc" type="text" name="sensation_notes" placeholder="Describe..." /></div>
+                            <div class="flex flex-col"><label for="coordination">Coordination / Motor:</label><input id="coordination" type="text" name="coordination" placeholder="Describe..." /></div>
+                        </div>
+
+                        <h3 class="font-bold mt-6 mb-2 text-gray-800">AROM / PROM & MMT</h3>
+                        <table>
+                            <thead><tr><th>Joint</th><th>ROM</th><th>Strength (MMT)</th></tr></thead>
+                            <tbody>
+                                <tr><td>Shoulder/Hip</td><td><input type="text" name="rom_prox" aria-label="Shoulder or Hip ROM"></td><td><input type="text" name="mmt_prox" aria-label="Shoulder or Hip MMT"></td></tr>
+                                <tr><td>Elbow/Knee</td><td><input type="text" name="rom_mid" aria-label="Elbow or Knee ROM"></td><td><input type="text" name="mmt_mid" aria-label="Elbow or Knee MMT"></td></tr>
+                                <tr><td>Wrist/Ankle</td><td><input type="text" name="rom_dist" aria-label="Wrist or Ankle ROM"></td><td><input type="text" name="mmt_dist" aria-label="Wrist or Ankle MMT"></td></tr>
+                            </tbody>
+                        </table>
+                        
+                        <div class="mt-6 border-t border-gray-200 pt-4">
+                            <label for="other_objective_tests" class="block text-gray-800 font-bold mb-1">Other Objective Tests & Measures:</label>
+                            <p class="text-sm text-gray-500 mb-2">Use this area to document special tests, balance scales (e.g. Berg, TUG), outcome measures, or other clinical observations.</p>
+                            <textarea id="other_objective_tests" name="other_objective_tests" class="w-full p-3 border border-gray-300 rounded min-h-[100px]" placeholder="e.g., Anterior Drawer Test: Positive. TUG Score: 14 seconds..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h2 class="section-title">Functional Mobility Status</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label for="bed_mobility">Bed Mobility (Supine to Sit):</label>
+                                <select id="bed_mobility" name="bed_mobility"><option value="">--Assist--</option><option value="IND">Independent</option><option value="SBA">SBA</option><option value="CGA">CGA</option><option value="MIN">MIN A</option><option value="MOD">MOD A</option><option value="MAX">MAX A</option><option value="DEP">Dependent</option></select>
+                            </div>
+                            <div><label for="sit_to_stand">Sit to Stand:</label>
+                                <select id="sit_to_stand" name="sit_to_stand"><option value="">--Assist--</option><option value="IND">Independent</option><option value="SBA">SBA</option><option value="CGA">CGA</option><option value="MIN">MIN A</option><option value="MOD">MOD A</option><option value="MAX">MAX A</option><option value="DEP">Dependent</option></select>
+                            </div>
+                            <div><label for="transfers">Transfers:</label>
+                                <select id="transfers" name="transfers"><option value="">--Assist--</option><option value="IND">Independent</option><option value="SBA">SBA</option><option value="CGA">CGA</option><option value="MIN">MIN A</option><option value="MOD">MOD A</option><option value="MAX">MAX A</option><option value="DEP">Dependent</option></select>
+                            </div>
+                            <div><label for="equipment_needs">Equipment Used/Needed:</label><input id="equipment_needs" type="text" name="equipment_needs" /></div>
+                        </div>
+
+                        <h3 class="font-bold mt-6 mb-2 text-gray-800 border-b pb-1">Gait / Locomotion</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label for="gait_wb">Weightbearing (L/R, UE/LE):</label><textarea id="gait_wb" name="gait_wb"></textarea></div>
+                            <div><label for="gait_details">Distance / Deviations / Assist:</label><textarea id="gait_details" name="gait_details"></textarea></div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h2 class="section-title">Assessment & Goals</h2>
+                        
+                        <div class="mb-4">
+                            <label for="assessment-textarea">Clinical Assessment:</label>
+                            <textarea id="assessment-textarea" name="assessment" class="w-full min-h-[120px] p-3 border border-gray-300 rounded mt-1" placeholder="Synthesize findings and document clinical impression..."></textarea>
+                        </div>
+
+                        <h3 class="font-bold mt-6 text-gray-800 border-b pb-2">Short Term Goals <span class="font-normal text-sm ml-2">(Target Days:) <input type="number" name="stg_days" aria-label="STG Target Days" class="inline-block w-16 px-1 py-0.5 border rounded border-gray-300"></span></h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                            <div class="flex flex-col"><label for="goal_supine_sit" class="text-sm text-gray-700">1. Supine to Sit</label><select id="goal_supine_sit" name="goal_supine_sit" class="mt-1"><option value="">--Assist--</option><option value="IND">IND</option><option value="SBA">SBA</option><option value="CGA">CGA</option><option value="MIN">MIN</option></select></div>
+                            <div class="flex flex-col"><label for="goal_sit_stand" class="text-sm text-gray-700">2. Sit to Stand</label><select id="goal_sit_stand" name="goal_sit_stand" class="mt-1"><option value="">--Assist--</option><option value="IND">IND</option><option value="SBA">SBA</option><option value="CGA">CGA</option><option value="MIN">MIN</option></select></div>
+                            <div class="flex flex-col"><label for="goal_amb" class="text-sm text-gray-700">3. Ambulation Assist</label><select id="goal_amb" name="goal_amb" class="mt-1"><option value="">--Assist--</option><option value="IND">IND</option><option value="SBA">SBA</option><option value="CGA">CGA</option><option value="MIN">MIN</option></select></div>
+                            <div class="flex flex-col md:col-span-2 lg:col-span-3"><label for="goal_dist_device" class="text-sm text-gray-700">4. Distance / Device / WB</label><input id="goal_dist_device" type="text" name="goal_dist_device" class="mt-1"></div>
+                            <div class="flex flex-col"><label for="goal_rom" class="text-sm text-gray-700">5. ROM Status</label><select id="goal_rom" name="goal_rom" class="mt-1"><option value="">--Goal--</option><option value="WNL">WNL</option><option value="WFL">WFL</option><option value="Improved">Improved</option></select></div>
+                            <div class="flex flex-col"><label for="goal_hep" class="text-sm text-gray-700">6. HEP Demo</label><select id="goal_hep" name="goal_hep" class="mt-1"><option value="">--Assist--</option><option value="IND">Independent</option><option value="SBA">SBA</option><option value="CGA">CGA</option></select></div>
+                        </div>
+                    </div>
+
+                    <div id="discharge-section" class="section">
+                        <h2 class="section-title">Prognosis & Discharge Planning</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label for="rehab_potential">Rehab Potential:</label>
+                                <select id="rehab_potential" name="rehab_potential"><option value="">--Select--</option><option value="Excellent">Excellent</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Poor">Poor</option></select>
+                            </div>
+                            <div><label for="freq_duration">Frequency & Duration:</label> <input id="freq_duration" type="text" name="freq_duration" placeholder="e.g., 3x/wk for 4 weeks" /></div>
+                            <div class="md:col-span-2"><label for="dc_disposition">Recommended Disposition:</label>
+                                <select id="dc_disposition" name="dc_disposition"><option value="">--Select--</option><option value="Home">Home</option><option value="Home w/Assist">Home w/ Family Assist</option><option value="HHPT">Home with HHPT</option><option value="IRF">Inpatient Rehab</option><option value="SNF">SNF</option></select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h2 class="section-title">Signature & Attestation</h2>
+                        <div class="mt-2">
+                            <label class="checkbox-group mb-2"><input type="checkbox" name="attest_agree"> Patient agrees to the above plan of care.</label>
+                            
+                            <label for="pt_signature" class="mt-4 block">Evaluating PT Signature (SPT):</label>
+                            <input id="pt_signature" type="text" name="pt_signature" placeholder="Sign here..." class="w-full md:w-1/2 block mt-1" />
+                        </div>
+                        
+                        <div class="mt-8 flex justify-end no-print">
+                            <button type="button" onclick="window.initiateSubmitReview()" class="bg-green-700 hover:bg-green-800 text-white font-bold py-3 px-8 rounded-lg shadow-lg text-lg transition-transform transform hover:scale-105"> 🛡️ Sign & Submit Eval </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- DYNAMIC PT CASE BANK ---
+        const caseBank = {
+            outpatient: [
+                { 
+                    cc: 'Eval and Treat s/p L ACL Reconstruction', 
+                    mockAiHpi: "Patient is a 19yo female presenting for initial PT eval following a left ACL reconstruction with hamstring autograft 14 days ago. Pain ranges 3/10 at rest to 7/10 during HEP. Using bilateral axillary crutches and hinged knee brace locked in extension.",
+                    mockGuardrail: "⚠️ AI CLINICAL CHECK: Patient is s/p hamstring autograft. Avoid isolated, resisted open-chain hamstring curls for at least 6-8 weeks to protect the harvest site.",
+                    radReport: "MRI Left Knee (Pre-Op): Complete full-thickness tear of the anterior cruciate ligament. Medial and lateral menisci appear intact."
+                },
+                { 
+                    cc: 'Right shoulder pain', 
+                    mockAiHpi: "Patient is a 19-year-old female volleyball player presenting with insidious onset of right anterior shoulder pain over the past 3 weeks. Pain is described as a 'deep ache' that becomes sharp during overhead serving and spiking. Rest and ice provide temporary relief. Her goal is to play in the regional tournament next month without pain.",
+                    mockGuardrail: "⚠️ AI CLINICAL CHECK: Patient is a throwing athlete with anterior shoulder pain. Ensure you assess glenohumeral internal rotation deficit (GIRD) as a potential contributing factor.",
+                    radReport: "XR Right Shoulder: No acute fracture or dislocation. Glenohumeral joint space is preserved. No calcific tendinosis appreciated. \n\nMRI Right Shoulder without contrast (Pending): Indicated for suspected rotator cuff tendinopathy or labral pathology."
+                },
+                { 
+                    cc: 'Chronic Lower Back Pain', 
+                    mockAiHpi: "Patient is a 19-year-old female presenting with chronic, intermittent lower back pain that has worsened since starting college 6 months ago. Pain is localized to the lower lumbar spine bilaterally, non-radiating, and described as 'tightness and burning'. It is severely aggravated by sitting in lecture halls for >45 minutes.",
+                    mockGuardrail: "⚠️ AI SAFETY ALERT: Ensure red flags for back pain (saddle anesthesia, bowel/bladder incontinence) have been formally ruled out and documented before proceeding with treatment.",
+                    radReport: "XR Lumbar Spine (AP and Lateral): Normal alignment. No evidence of spondylolysis or spondylolisthesis. Vertebral body heights are maintained. Intervertebral disc spaces appear normal."
+                }
+            ],
+            neuro: [
+                { 
+                    cc: 'PT Eval for acute Left MCA CVA', 
+                    mockAiHpi: "72yo male admitted to inpatient rehab 3 days ago following acute Left MCA ischemic stroke. Presents with dense right-sided hemiparesis and expressive aphasia. Requires max assist for bed mobility. Prior to admission, lived in a 2-story home, Independent ADLs.",
+                    mockGuardrail: "⚠️ AI SAFETY ALERT: Patient has high risk for R shoulder subluxation due to flaccidity. Ensure proper positioning in wheelchair (lap tray/trough) and avoid pulling on the affected arm during transfers.",
+                    radReport: "CT Head without Contrast: Large hypodense region in the territory of the left middle cerebral artery consistent with an acute ischemic infarct."
+                },
+                { 
+                    cc: 'Frequent falls and gait instability', 
+                    mockAiHpi: "Patient is a 72-year-old male with a 5-year history of Parkinson's Disease, admitted after a fall at home resulting in a minor scalp laceration. He reports increasing difficulty initiating movement and a feeling that his 'feet are glued to the floor' (freezing of gait). He has had 3 falls in the past month.",
+                    mockGuardrail: "⚠️ AI CLINICAL CHECK: Patient presents with freezing of gait. Consider implementing external cues (visual targets on floor, rhythmic auditory cueing) into the plan of care to improve step length and initiation.",
+                    radReport: "CT Head without Contrast (Post-Fall protocol): No acute intracranial hemorrhage. No midline shift. Mild diffuse cortical atrophy and periventricular white matter changes expected for age."
+                },
+                { 
+                    cc: 'Progressive bilateral LE weakness', 
+                    mockAiHpi: "Patient is a 72-year-old male admitted to acute neurology 4 days ago with rapidly ascending bilateral lower extremity weakness and paresthesia, diagnosed with Guillain-Barré Syndrome (GBS). He is currently medically stable and receiving IVIG therapy. He is unable to stand independently.",
+                    mockGuardrail: "⚠️ AI SAFETY ALERT: In acute phase of Guillain-Barré Syndrome, overworking partially denervated muscle fibers can delay recovery. Therapy must be low-intensity and focus on ROM, positioning, and avoiding fatigue.",
+                    radReport: "MRI Lumbar Spine w/ & w/o contrast: Diffuse enhancement of the cauda equina nerve roots, strongly supportive of a demyelinating polyneuropathy such as Guillain-Barré syndrome."
+                }
+            ],
+            acute: [
+                { 
+                    cc: 'Eval and Treat s/p R Total Hip Arthroplasty', 
+                    mockAiHpi: "85yo female, Post-Op Day 2 following a Right Total Hip Arthroplasty (posterior approach) due to severe osteoarthritis. Reports surgical site pain at 5/10 at rest, increasing to 8/10 with movement. Complains of dizziness when moving from supine to sit. She successfully stood with nursing this morning using a standard walker.",
+                    mockGuardrail: "⚠️ AI CLINICAL CHECK: Patient had a posterior approach THA. Ensure adherence to hip precautions (No hip flexion >90°, no adduction past midline, no internal rotation) during all mobility and exercise.",
+                    radReport: "XR Pelvis AP (Post-Op): Right total hip arthroplasty components are in appropriate alignment. No evidence of periprosthetic fracture."
+                },
+                { 
+                    cc: 'Severe generalized weakness and debility', 
+                    mockAiHpi: "Patient is an 85-year-old female admitted 6 days ago for severe Community-Acquired Pneumonia and sepsis. She is now medically stable, off supplemental oxygen, and cleared for therapy. She presents with profound generalized weakness, fatigue, and orthostatic intolerance after prolonged bed rest.",
+                    mockGuardrail: "⚠️ AI SAFETY ALERT: Monitor vital signs closely (HR, BP, SpO2) before, during, and after mobility. Watch for signs of orthostatic hypotension when transitioning from supine to sit to stand.",
+                    radReport: "XR Chest PA/Lateral: Improved aeration of the right lower lobe compared to prior study. Mild residual patchy opacities in the right base consistent with resolving pneumonia. No pleural effusion or pneumothorax."
+                },
+                { 
+                    cc: 'Acute Lumbar Compression Fracture', 
+                    mockAiHpi: "85yo female admitted yesterday with acute L2 compression fracture. Reports severe, sharp mid-to-lower back pain (9/10). Wearing custom TLSO brace but fearful to move in bed. Denies radiating leg pain.",
+                    mockGuardrail: "⚠️ AI CLINICAL CHECK: Patient has an acute spinal fracture. Ensure strict adherence to BLT precautions (No Bending, Lifting, Twisting). Educate on log-rolling technique for bed mobility.",
+                    radReport: "XR Lumbar Spine: Acute wedge compression fracture of the L2 vertebral body. Severe diffuse osteopenia."
+                }
+            ]
+        };
+
+        const patientBase = {
+            'patient1': { name: 'Maya Lin', dob: '2005-09-12', type: 'outpatient', details: 'MRN: 882910 | DOB: 09/12/2005 | Status: Outpatient Ortho' },
+            'patient2': { name: 'Robert Chen', dob: '1952-03-04', type: 'neuro', details: 'MRN: 399102 | DOB: 03/04/1952 | Status: Neuro Rehab' },
+            'patient3': { name: 'Eleanor Vance', dob: '1938-11-25', type: 'acute', details: 'MRN: 559201 | DOB: 11/25/1938 | Status: Acute Care' }
+        };
+
+        let currentPatientId = 'patient1';
+        let activeScenarios = {};
+
+        // --- GLOBAL FUNCTIONS ---
+        window.initializeCases = function() {
+            const savedCases = localStorage.getItem('ptStudentScenarios');
+            if (savedCases) { 
+                activeScenarios = JSON.parse(savedCases); 
+                if(!activeScenarios['patient1'].mockAiHpi) window.generateNewCases();
+            } else { 
+                window.generateNewCases(); 
+            }
+            window.updateRosterUI();
+        };
+
+        window.generateNewCases = function() {
+            for (let pt in patientBase) {
+                const bank = caseBank[patientBase[pt].type];
+                const randomCase = bank[Math.floor(Math.random() * bank.length)];
+                activeScenarios[pt] = { ...patientBase[pt], ...randomCase };
+            }
+            localStorage.setItem('ptStudentScenarios', JSON.stringify(activeScenarios));
+        };
+
+        window.updateRosterUI = function() {
+            for(let i=1; i<=3; i++) {
+                const el = document.getElementById(`pt${i}-cc`);
+                if(el) el.textContent = "Referral: " + activeScenarios[`patient${i}`].cc;
+            }
+        };
+
+        window.selectPatient = function(patientId, element) {
+            currentPatientId = patientId;
+            document.querySelectorAll('.patient-card').forEach(card => {
+                card.classList.remove('active-patient');
+                card.setAttribute('aria-selected', 'false');
+            });
+            element.classList.add('active-patient');
+            element.setAttribute('aria-selected', 'true');
+
+            const pt = activeScenarios[patientId];
+            document.getElementById('banner-name').textContent = pt.name;
+            document.getElementById('banner-details').textContent = pt.details;
+            
+            document.getElementById('form-patient-name').value = pt.name;
+            document.getElementById('physician_order').value = pt.cc;
+            document.getElementById('intake_notes').value = pt.mockAiHpi; // Populate Intake
+            
+            const dob = new Date(pt.dob);
+            document.getElementById('patient-age').value = Math.floor((new Date() - dob) / 31557600000);
+
+            // Radiology Update
+            const radReportField = document.getElementById('rad-report');
+            if(radReportField) radReportField.value = pt.radReport || "No recent imaging available.";
+            
+            // Discharge Section Visibility Update
+            const dischargeSection = document.getElementById('discharge-section');
+            if(dischargeSection) {
+                if(pt.type === 'neuro' || pt.type === 'acute') {
+                    dischargeSection.classList.remove('hidden');
+                } else {
+                    dischargeSection.classList.add('hidden'); // Hidden for Outpatient
+                }
+            }
+            window.saveForm();
+        };
+
+        // --- GUARDRAIL LOGIC ---
+        window.initiateSubmitReview = function() {
+            const modal = document.getElementById('guardrail-modal');
+            const loading = document.getElementById('modal-loading');
+            const results = document.getElementById('modal-results');
+            const submitBtn = document.getElementById('force-submit-btn');
+            
+            modal.classList.remove('hidden');
+            loading.classList.remove('hidden');
+            results.classList.add('hidden');
+            submitBtn.classList.add('hidden');
+            modal.focus();
+
+            setTimeout(() => {
+                loading.classList.add('hidden');
+                document.getElementById('guardrail-text').textContent = activeScenarios[currentPatientId].mockGuardrail || "No safety flags detected based on current inputs.";
+                results.classList.remove('hidden');
+                submitBtn.classList.remove('hidden');
+                submitBtn.focus();
+            }, 2500);
+        };
+
+        window.closeModal = function() { document.getElementById('guardrail-modal').classList.add('hidden'); };
+        
+        window.finalizeSignature = function() {
+            alert("PT Evaluation Signed & Submitted!");
+            window.closeModal();
+        };
+
+        window.clearCurrentChart = function() { 
+            if(confirm("Clear current chart? Scenario remains the same.")) { 
+                document.getElementById('emr-form').reset();
+                localStorage.removeItem('ptStudentPortalData');
+                const card = document.querySelector('.patient-card.active-patient');
+                if(card) window.selectPatient(currentPatientId, card);
+            } 
+        };
+
+        window.clearFormAndRegenerate = function(e) { 
+            e.preventDefault();
+            if(confirm("Generate new scenarios? Your current notes will be lost.")) { 
+                localStorage.removeItem('ptStudentScenarios'); 
+                localStorage.removeItem('ptStudentPortalData');
+                location.reload();
+            } 
+        };
+
+        function debounce(f, d) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), d); }; }
+        window.saveForm = function() {
+            try {
+                const data = {}; 
+                const form = document.getElementById('emr-form');
+                if(!form) return;
+                const fd = new FormData(form);
+                for(let [k, v] of fd.entries()) { data[k] = v; }
+                localStorage.setItem('ptStudentPortalData', JSON.stringify(data));
+                const st = document.getElementById('save-status'); 
+                if(st) { st.style.display = "block"; setTimeout(() => st.style.display = "none", 2000); }
+            } catch (e) { console.error(e); }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                window.initializeCases(); 
+                
+                const form = document.getElementById('emr-form');
+                if(form) form.addEventListener('input', debounce(window.saveForm, 500));
+                
+                // Load saved data
+                const saved = localStorage.getItem('ptStudentPortalData');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    for(let k in data) {
+                        const el = form.elements[k];
+                        if(el) { 
+                            if (el instanceof NodeList) { el.forEach(node => { if(node.value === data[k]) node.checked = true; }); } 
+                            else { el.value = data[k]; }
+                        }
+                    }
+                }
+
+                // Sync initial state
+                const firstCard = document.querySelector('.patient-card');
+                if(firstCard) window.selectPatient('patient1', firstCard);
+            } catch (e) {
+                console.error("Initialization failure:", e);
+                alert("The EMR encountered an error loading your session. It has been reset.");
+                localStorage.removeItem('ptStudentPortalData');
+                localStorage.removeItem('ptStudentScenarios');
+            }
+        });
+    </script>
+</body>
+</html>
